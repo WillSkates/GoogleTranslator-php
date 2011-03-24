@@ -4,42 +4,62 @@
  * GoogleTranslator for PHP - library for translating text via Google Translator API.
  *
  * @author     David Grudl
+ * @author     Will Skates
  * @copyright  Copyright (c) 2010 David Grudl
  * @license    New BSD License
  * @link       http://phpfashion.com/
- * @version    1.0
+ * @link       http://twitter.com/willskates
+ * @version    1.0 - Modified (Will Skates).
  */
-class GoogleTranslator
+abstract class GoogleTranslator
 {
-
-	/** @var string  source lang */
-	private $srcLang;
-
-	/** @var string  destination lang */
-	private $destLang;
-
-
-
+	
+	// An array to store the language params.
+	public static $langs = array(
+		'sourceLang'=>'',
+		'destLang'=>''
+	);
+	
+	//An array to contain a list of translations which are already complete.
+	public static $translations = array();
+	
+	// ------------------------------------------------------------------------
+	
 	/**
-	 * @param  string   source language (optional)
-	 * @param  string   destination language
+	 * Translate.
+	 * 
+	 * Translates text from a source to a destination language.
+	 * 
+	 * Note: Source and destination language references must be in ISO format (e.g. en,de)
+	 * 
+	 * @param	String 	$text 		- The text we want to translate.
+	 * @param	String 	$sourceLang - The source language reference (optional).
+	 * @param	String	$destLang	- The destination language reference (optional).
 	 */
-	public function __construct($srcLang, $destLang)
+	public static function translate($text,$sourceLang = false,$destLang = false)
 	{
-		$this->srcLang = $srcLang;
-		$this->destLang = $destLang;
-	}
-
-
-
-	/**
-	 * Translates text.
-	 * @param  string
-	 * @return string
-	 * @throws GoogleTranslatorException
-	 */
-	public function translate($text)
-	{
+	
+		//Store the variable names that we need to access (these are mimiced in self::$langs).
+		$vars = array('sourceLang','destLang');		
+		foreach ($vars as $k=>$v) { 
+			/*
+			 * Check to see if the parameter was passed with the function.
+			 * If not, use one that has already been set (if possible).
+			 */
+			if ( $$v === false ) { $$v = self::$langs[$v]; }
+			if ( empty($$v) ) { 
+				throw new GoogleTranslatorException('No value was set for ' . $v . '.');
+			}
+		}
+		
+		//Create an array reference string for this translation.
+		$ref = md5($text . $sourceLang . $destLang);
+		
+		//If we've already done the work, don't bother doing it again.
+		if ( isset(self::$translations[$ref]) ) { return self::$translations[$ref]; }
+		
+		
+		//Get the translation from the api.
 		$curl = curl_init();
 		curl_setopt($curl, CURLOPT_URL, 'http://ajax.googleapis.com/ajax/services/language/translate');
 		curl_setopt($curl, CURLOPT_HEADER, FALSE);
@@ -47,7 +67,7 @@ class GoogleTranslator
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE); // no echo, just return result
 		curl_setopt($curl, CURLOPT_POSTFIELDS, array(
 			'v' => '1.0',
-			'langpair' => "$this->srcLang|$this->destLang",
+			'langpair' => $sourceLang . '|' . $destLang,
 			'q' => (string) $text
 		));
 
@@ -61,13 +81,50 @@ class GoogleTranslator
 			throw new GoogleTranslatorException("Server error #$code", $code);
 		}
 
-		$json = @json_decode($result); // intentionally @
+		$json = @json_decode($result); // intentionally @ - Why?
 		if (!isset($json->responseData->translatedText)) {
 			throw new GoogleTranslatorException('Invalid server response');
 		}
-
-		return $json->responseData->translatedText;
+		
+		//Make sure we don't have to make the translation a second time.
+		self::$translations[$ref] = $json->responseData->translatedText;
+		
+		return self::$translations[$ref];
+		
 	}
+	
+	// ------------------------------------------------------------------------
+	
+	/**
+	 * Set Languages
+	 * 
+	 * In case the developer using this class wants to batch process a lot of
+	 * translations from one to another, allow them to set the translation languages here.
+	 * 
+	 * The function also allows either parameter to be optional so that they can be set 
+	 * individually.
+	 * 
+	 * E.g.
+	 * To set the source: 		GoogleTranslator::setLanguages('en');
+	 * To set the destination:	GoogleTranslator::setLanguages(false,'de');
+	 * To set both:				GoogleTranslator::setLanguages('en','de');
+	 * 
+	 * @param	String 	$sourceLang - The source language reference (optional).
+	 * @param	String	$destLang	- The destination language reference (optional).
+	 */
+	public static function setLanguages($sourceLang = false,$destLang = false)
+	{
+		
+		if ($sourceLang === false && $destLang === false ) {
+			throw new GoogleTranslatorException('You must set either a source or destination language.');
+		}
+		
+		$vars = array('sourceLang','destLang');
+		foreach ($vars as $k=>$v) { if ( $$v !== false ) { self::$langs[$v] = $$v; } }
+	}
+	
+	// ------------------------------------------------------------------------
+
 
 }
 
